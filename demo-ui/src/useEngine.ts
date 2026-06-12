@@ -62,22 +62,55 @@ export function useEngine() {
     })();
   }, []);
 
-  // WebSocket event stream with auto-reconnect.
+  // Event stream: prefer WebSocket (instant, used locally / same-origin). When
+  // WS can't connect — e.g. the dashboard is served through an HTTPS reverse
+  // proxy that doesn't forward the WS upgrade (Vercel) — fall back to polling
+  // GET /events?since=<cursor>, which replays the exact same event stream.
   useEffect(() => {
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    let wsConnected = false;
+    let cursor = 0;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let wsRetry: ReturnType<typeof setTimeout> | undefined;
+    let ws: WebSocket | undefined;
+
+    const poll = async () => {
+      if (stopped || wsConnected) return;
+      try {
+        const r = await fetch(`/events?since=${cursor}`);
+        const data = (await r.json()) as { events: (EngineEvent & { seq: number })[]; cursor: number };
+        for (const e of data.events) {
+          cursor = e.seq;
+          handleEvent(e);
+        }
+        if (typeof data.cursor === "number" && data.events.length === 0) cursor = data.cursor;
+        setState((s) => (s.connected ? s : { ...s, connected: true }));
+      } catch {
+        setState((s) => ({ ...s, connected: false }));
+      }
+      if (!stopped && !wsConnected) pollTimer = setTimeout(poll, 1500);
+    };
 
     const connect = () => {
+      if (stopped) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${location.host}/ws/events`);
+      ws = new WebSocket(`${proto}://${location.host}/ws/events`);
       wsRef.current = ws;
 
-      ws.onopen = () => setState((s) => ({ ...s, connected: true }));
-      ws.onclose = () => {
-        setState((s) => ({ ...s, connected: false }));
-        if (!closed) retry = setTimeout(connect, 1500);
+      ws.onopen = () => {
+        wsConnected = true;
+        if (pollTimer) clearTimeout(pollTimer);
+        setState((s) => ({ ...s, connected: true }));
       };
-      ws.onerror = () => ws.close();
+      ws.onclose = () => {
+        wsConnected = false;
+        setState((s) => ({ ...s, connected: false }));
+        if (!stopped) {
+          poll(); // fall back to polling immediately
+          wsRetry = setTimeout(connect, 5000); // and keep trying WS in the background
+        }
+      };
+      ws.onerror = () => ws?.close();
       ws.onmessage = (e) => {
         let ev: EngineEvent;
         try {
@@ -147,10 +180,18 @@ export function useEngine() {
     };
 
     connect();
+    // Safety net: if WS neither opens nor closes within 2.5s (silent proxy
+    // black-hole), start polling anyway.
+    const kick = setTimeout(() => {
+      if (!wsConnected) poll();
+    }, 2500);
+
     return () => {
-      closed = true;
-      if (retry) clearTimeout(retry);
-      wsRef.current?.close();
+      stopped = true;
+      clearTimeout(kick);
+      if (pollTimer) clearTimeout(pollTimer);
+      if (wsRetry) clearTimeout(wsRetry);
+      ws?.close();
     };
   }, [pushFeed]);
 

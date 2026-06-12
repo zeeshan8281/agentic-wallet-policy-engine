@@ -27,9 +27,26 @@ console.log(`[engine] TEE enclave    ${kms.inEnclave() ? "yes" : "no (mock signi
 const app = express();
 app.use(express.json());
 
+// Permissive CORS — the engine is a policy gateway, not an auth boundary, and
+// the demo dashboard may be served from a different origin (e.g. Vercel).
+app.use((_req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "content-type");
+  if (_req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // --- event bus (WebSocket fan-out) ----------------------------------------
 const wss = new WebSocketServer({ noServer: true });
 const clients = new Set<WebSocket>();
+
+// Ring buffer of recent events so clients that cannot hold a WebSocket (e.g. a
+// browser behind an HTTPS reverse proxy like Vercel, where WS upgrade isn't
+// proxied) can poll GET /events?since=<seq> and reconstruct the same stream.
+const recentEvents: { seq: number; ev: EngineEvent }[] = [];
+let eventSeq = 0;
+const MAX_RECENT = 200;
 
 type EngineEvent =
   | { type: "request"; tx: TxRequest; at: string }
@@ -46,6 +63,9 @@ type EngineEvent =
   | { type: "alert"; level: "warn"; message: string; at: string };
 
 function broadcast(ev: EngineEvent) {
+  const seq = ++eventSeq;
+  recentEvents.push({ seq, ev });
+  if (recentEvents.length > MAX_RECENT) recentEvents.shift();
   const msg = JSON.stringify(ev);
   for (const ws of clients) {
     if (ws.readyState === WebSocket.OPEN) ws.send(msg);
@@ -88,6 +108,15 @@ app.get("/address", (_req, res) => {
 
 app.get("/status", (_req, res) => {
   res.json(currentStatus());
+});
+
+// Polling fallback for the event stream (used when WebSocket isn't available).
+app.get("/events", (req, res) => {
+  const since = Number(req.query.since ?? 0);
+  const events = recentEvents
+    .filter((e) => e.seq > since)
+    .map((e) => ({ seq: e.seq, ...e.ev }));
+  res.json({ events, cursor: eventSeq });
 });
 
 app.post("/sign", async (req, res) => {
