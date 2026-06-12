@@ -1,5 +1,55 @@
 @import "tailwindcss";
 
+/* Geist + Geist Mono — Eigen design-system body & mono faces */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap");
+
+/* ABC Repro Variable — Eigen heading face (bundled from the design system) */
+@font-face {
+  font-family: "ABC Repro Variable";
+  src: url("./assets/brand/ABCReproVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/*
+ * Design tokens lifted from @layr-labs/eigen-design (dark theme).
+ * Exposed as Tailwind theme vars so utilities like bg-card / border-border /
+ * text-muted-foreground / rounded-md resolve to brand values.
+ */
+@theme {
+  --color-background: #0a0a0a;
+  --color-foreground: #fafafa;
+  --color-card: #171717;
+  --color-card-foreground: #fafafa;
+  --color-muted: #262626;
+  --color-muted-foreground: #a3a3a3;
+  --color-border: #ffffff1a;
+  --color-input: #ffffff26;
+
+  /* Eigen primary indigo + dark-mode accent family */
+  --color-primary: #1a0c6d;
+  --color-primary-foreground: #fafafa;
+  --color-brand: #6366f1; /* indigo-500 */
+  --color-brand-light: #818cf8; /* indigo-400 */
+  --color-brand-soft: #a5b4fc; /* indigo-300 */
+
+  /* Semantic verdict colors (success kept green for legibility; block uses the
+     Eigen destructive token) */
+  --color-pass: #34d399;
+  --color-block: #f87171;
+
+  /* Eigen radius scale — deliberately tight / sharp-cornered */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+  --font-heading: "ABC Repro Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -9,9 +59,16 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #0a0b0f;
-  color: #e5e7eb;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Heading face helper */
+.font-heading {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
 }
 
 /* thin scrollbars for the feed columns */
@@ -19,6 +76,14 @@ body,
   width: 6px;
 }
 .scroll-thin::-webkit-scrollbar-thumb {
-  background: #2a2d36;
+  background: #ffffff1a;
   border-radius: 3px;
+}
+
+/* subtle brand grid texture for the empty verdict stage */
+.brand-grid {
+  background-image:
+    linear-gradient(#ffffff08 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+  background-size: 32px 32px;
 }

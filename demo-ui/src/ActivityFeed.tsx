@@ -2,9 +2,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { FeedItem } from "./types";
 
 const KIND_STYLE: Record<FeedItem["kind"], { dot: string; label: string; labelColor: string }> = {
-  request: { dot: "bg-sky-400", label: "REQUEST", labelColor: "text-sky-300" },
-  pass: { dot: "bg-emerald-400", label: "PASS", labelColor: "text-emerald-300" },
-  blocked: { dot: "bg-rose-500", label: "BLOCKED", labelColor: "text-rose-300" },
+  request: { dot: "bg-brand-light", label: "REQUEST", labelColor: "text-brand-light" },
+  pass: { dot: "bg-pass", label: "PASS", labelColor: "text-pass" },
+  blocked: { dot: "bg-block", label: "BLOCKED", labelColor: "text-block" },
   alert: { dot: "bg-amber-400", label: "ALERT", labelColor: "text-amber-300" },
 };
 
@@ -22,7 +22,7 @@ export function ActivityFeed({ items }: { items: FeedItem[] }) {
       <PanelHeader title="Agent Activity" subtitle="live signing requests" />
       <div className="flex-1 overflow-y-auto scroll-thin px-3 py-2 space-y-1.5">
         {items.length === 0 && (
-          <p className="text-xs text-neutral-500 px-1 py-4">
+          <p className="text-xs text-muted-foreground px-1 py-4">
             Waiting for agent activity… run the simulation to begin.
           </p>
         )}
@@ -37,7 +37,7 @@ export function ActivityFeed({ items }: { items: FeedItem[] }) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2"
+                className="rounded-md border border-border bg-card px-3 py-2"
               >
                 <div className="flex items-center gap-2">
                   <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
@@ -65,9 +65,9 @@ export function ActivityFeed({ items }: { items: FeedItem[] }) {
 
 export function PanelHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="px-4 py-3 border-b border-white/5">
-      <h2 className="text-sm font-semibold text-neutral-100">{title}</h2>
-      {subtitle && <p className="text-[11px] text-neutral-500 mt-0.5">{subtitle}</p>}
+    <div className="px-4 py-3 border-b border-border">
+      <h2 className="font-heading text-sm font-semibold text-foreground">{title}</h2>
+      {subtitle && <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>}
     </div>
   );
 }
