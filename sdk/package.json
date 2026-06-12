@@ -1,0 +1,25 @@
+{
+  "name": "@eigencompute/wallet-policy",
+  "version": "0.1.0",
+  "description": "Drop-in client for TEE-enforced agent wallet spending policies on EigenCompute",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "keywords": ["eigencompute", "tee", "agent", "wallet", "policy", "crypto", "ai-agent"],
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

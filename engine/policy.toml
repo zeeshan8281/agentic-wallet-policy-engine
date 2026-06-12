@@ -1,0 +1,30 @@
+# Agentic Wallet Policy Engine — default demo policy
+# This file is baked into the Docker image at build time and is IMMUTABLE at
+# runtime. Changing policy requires a new deployment (new on-chain digest).
+
+[limits]
+max_per_tx  = "0.1"    # ETH per single transaction
+daily_cap   = "1.0"    # ETH per rolling 24h window
+monthly_cap = "10.0"   # ETH per rolling 30d window
+
+[whitelist]
+# Only these contracts may be called. Raw ETH transfers to EOAs are governed by
+# allow_eoa below.
+contracts = [
+  "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", # Uniswap V2 Router
+  "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F", # SushiSwap Router
+]
+allow_eoa = false      # block raw ETH transfers to externally owned accounts
+
+[selectors]
+# 4-byte function selectors the agent is permitted to call.
+allowed = [
+  "0x38ed1739", # swapExactTokensForTokens
+  "0x7ff36ab5", # swapExactETHForTokens
+  "0x095ea7b3", # approve
+]
+
+[alerts]
+webhook            = ""     # optional Slack/Discord webhook for violations
+on_violation       = true
+on_daily_threshold = 0.8    # alert at 80% of daily cap

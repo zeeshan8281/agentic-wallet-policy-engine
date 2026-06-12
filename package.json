@@ -1,0 +1,17 @@
+{
+  "name": "agentic-wallet-policy-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TEE-enforced spending policies for agent wallets on EigenCompute",
+  "license": "MIT",
+  "scripts": {
+    "build:engine": "cd engine && npm run build",
+    "build:ui": "cd demo-ui && npm run build",
+    "build:sdk": "cd sdk && npm run build",
+    "build": "npm run build:sdk && npm run build:engine && npm run build:ui",
+    "start": "node engine/dist/index.js",
+    "demo": "cd simulate && npm run demo",
+    "docker:build": "docker buildx build --platform linux/amd64 -t zeeshan8281/awpe-engine:latest --push .",
+    "docker:run": "docker run --platform linux/amd64 -p 3100:3100 zeeshan8281/awpe-engine:latest"
+  }
+}
