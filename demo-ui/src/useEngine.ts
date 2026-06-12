@@ -70,6 +70,7 @@ export function useEngine() {
     let stopped = false;
     let wsConnected = false;
     let cursor = 0;
+    let firstPoll = true;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
     let wsRetry: ReturnType<typeof setTimeout> | undefined;
     let ws: WebSocket | undefined;
@@ -79,11 +80,16 @@ export function useEngine() {
       try {
         const r = await fetch(`/events?since=${cursor}`);
         const data = (await r.json()) as { events: (EngineEvent & { seq: number })[]; cursor: number };
-        for (const e of data.events) {
+        // On first connect, don't replay the whole server backlog — that would
+        // flicker the verdict card through history. Show just the recent tail.
+        let batch = data.events;
+        if (firstPoll && batch.length > 8) batch = batch.slice(-8);
+        firstPoll = false;
+        for (const e of batch) {
           cursor = e.seq;
           handleEvent(e);
         }
-        if (typeof data.cursor === "number" && data.events.length === 0) cursor = data.cursor;
+        if (typeof data.cursor === "number" && batch.length === 0) cursor = data.cursor;
         setState((s) => (s.connected ? s : { ...s, connected: true }));
       } catch {
         setState((s) => ({ ...s, connected: false }));
