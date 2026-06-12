@@ -22,6 +22,13 @@ export interface PolicyConfig {
     on_violation: boolean;
     on_daily_threshold: number;
   };
+  payments?: {
+    max_per_payment_usdc: string;
+    daily_budget_usdc: string;
+    networks: string[];
+    assets: string[];
+    payees: string[];
+  };
 }
 
 export interface TxRequest {
@@ -164,5 +171,14 @@ function normalizeConfig(p: Partial<PolicyConfig>): PolicyConfig {
       on_violation: p.alerts?.on_violation ?? true,
       on_daily_threshold: p.alerts?.on_daily_threshold ?? 0.8,
     },
+    payments: p.payments
+      ? {
+          max_per_payment_usdc: p.payments.max_per_payment_usdc ?? "0",
+          daily_budget_usdc: p.payments.daily_budget_usdc ?? "0",
+          networks: p.payments.networks ?? [],
+          assets: p.payments.assets ?? [],
+          payees: p.payments.payees ?? [],
+        }
+      : undefined,
   };
 }

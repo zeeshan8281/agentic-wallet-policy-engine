@@ -28,3 +28,29 @@ allowed = [
 webhook            = ""     # optional Slack/Discord webhook for violations
 on_violation       = true
 on_daily_threshold = 0.8    # alert at 80% of daily cap
+
+# ---------------------------------------------------------------------------
+# x402 agentic-commerce payment policy (the v2 signing gateway).
+# AWPE holds the signing key; an agent forwards a merchant's 402 "accept" and
+# AWPE signs the EIP-3009 USDC authorization ONLY if it passes these rules.
+# ---------------------------------------------------------------------------
+[payments]
+max_per_payment_usdc = "5.0"    # cap on any single x402 payment
+daily_budget_usdc    = "50.0"   # rolling 24h budget across all payments
+
+# Allowed settlement networks (CAIP-2). Base + Base Sepolia.
+networks = ["eip155:8453", "eip155:84532"]
+
+# Allowed payment assets — USDC only (Base mainnet + Base Sepolia contracts).
+assets = [
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", # USDC on Base
+  "0x036CbD53842c5426634e7929541eC2318f3dCF7e", # USDC on Base Sepolia
+]
+
+# Allowlisted merchant settlement addresses (the `payTo` from the 402 challenge).
+# A prompt-injected agent that tries to pay any address NOT in this list gets
+# refused at the signer — it never had the key. Populate with the real merchant
+# addresses captured from fetch_quote.
+payees = [
+  "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", # demo merchant (stablemerch)
+]

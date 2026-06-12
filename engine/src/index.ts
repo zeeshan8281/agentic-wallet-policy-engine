@@ -2,17 +2,24 @@ import express from "express";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { WebSocketServer, WebSocket } from "ws";
 import { Policy, type TxRequest } from "./policy.js";
 import { Ledger } from "./ledger.js";
 import { KmsClient } from "./kms.js";
+import { PaymentSigner, type V2Accept } from "./payments.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// EigenCompute writes sealed secrets to /tmp/.env at boot. Load them into
+// process.env (without clobbering anything already set) before reading keys.
+loadSealedEnv("/tmp/.env");
 
 const PORT = Number(process.env.PORT ?? 3100);
 const POLICY_PATH = process.env.POLICY_PATH ?? join(__dirname, "..", "policy.toml");
 const KMS_ENDPOINT = process.env.KMS_ENDPOINT; // unset => mock signing
+// The x402 payment signing key — a sealed secret, only present inside the TEE.
+const SIGNER_PRIVATE_KEY = process.env.SIGNER_PRIVATE_KEY;
 // Static UI bundle (copied into the image at build time). Optional.
 const UI_DIR = process.env.UI_DIR ?? join(__dirname, "..", "public");
 
@@ -20,9 +27,36 @@ const policy = Policy.fromFile(POLICY_PATH);
 const ledger = new Ledger();
 const kms = new KmsClient(KMS_ENDPOINT);
 
+// Payment signing gateway — only active when a key + payments policy exist.
+let signer: PaymentSigner | null = null;
+if (policy.config.payments && SIGNER_PRIVATE_KEY) {
+  signer = new PaymentSigner(SIGNER_PRIVATE_KEY as `0x${string}`, policy.config.payments);
+  console.log(`[engine] payment signer ${signer.address} (x402 gateway active)`);
+} else if (policy.config.payments) {
+  console.log(`[engine] payment policy present but SIGNER_PRIVATE_KEY unset — /sign-payment disabled`);
+}
+
 console.log(`[engine] policy loaded  hash=${policy.hash}`);
 console.log(`[engine] wallet address ${kms.getAddress()}`);
 console.log(`[engine] TEE enclave    ${kms.inEnclave() ? "yes" : "no (mock signing)"}`);
+
+function loadSealedEnv(path: string) {
+  try {
+    if (!existsSync(path)) return;
+    for (const line of readFileSync(path, "utf-8").split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
+      if (!m) continue;
+      const key = m[1];
+      let val = m[2].trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (process.env[key] === undefined) process.env[key] = val;
+    }
+  } catch {
+    /* best-effort */
+  }
+}
 
 const app = express();
 app.use(express.json());
@@ -60,7 +94,19 @@ type EngineEvent =
       at: string;
     }
   | { type: "status"; status: ReturnType<Ledger["status"]>; at: string }
-  | { type: "alert"; level: "warn"; message: string; at: string };
+  | { type: "alert"; level: "warn"; message: string; at: string }
+  | {
+      type: "payment";
+      verdict: "PASS" | "BLOCKED";
+      payee: string;
+      amountUsdc: string;
+      network: string;
+      merchant?: string;
+      item?: string;
+      violations: { rule: string; message: string }[];
+      policyHash: string;
+      at: string;
+    };
 
 function broadcast(ev: EngineEvent) {
   const seq = ++eventSeq;
@@ -195,6 +241,89 @@ app.post("/sign", async (req, res) => {
       message: (e as Error).message,
       policyHash: policy.hash,
     });
+  }
+});
+
+// --- x402 payment signing gateway -----------------------------------------
+// The agent forwards a merchant's 402 "accept"; AWPE validates against the
+// payment policy and signs the EIP-3009 USDC authorization with the sealed key
+// ONLY if it passes. The agent never holds the key.
+app.get("/payment-address", (_req, res) => {
+  if (!signer) return res.status(404).json({ error: "signer disabled" });
+  res.json({ address: signer.address });
+});
+
+app.get("/payment-status", (_req, res) => {
+  if (!signer) return res.status(404).json({ error: "signer disabled" });
+  res.json(signer.status());
+});
+
+app.post("/sign-payment", async (req, res) => {
+  if (!signer) {
+    return res.status(503).json({
+      ok: false,
+      error: "SIGNER_DISABLED",
+      message: "no payments policy or SIGNER_PRIVATE_KEY configured",
+    });
+  }
+  const body = req.body as { accept?: V2Accept; merchant?: string; item?: string };
+  const accept = body?.accept;
+  if (!accept || typeof accept.payTo !== "string" || typeof accept.network !== "string") {
+    return res.status(400).json({ ok: false, error: "BAD_REQUEST", message: "missing `accept`" });
+  }
+
+  const at = new Date().toISOString();
+  const pre = signer.evaluate(accept);
+  if (!pre.ok) {
+    broadcast({
+      type: "payment",
+      verdict: "BLOCKED",
+      payee: accept.payTo,
+      amountUsdc: pre.amountUsdc,
+      network: accept.network,
+      merchant: body.merchant,
+      item: body.item,
+      violations: pre.violations,
+      policyHash: policy.hash,
+      at,
+    });
+    await maybeAlert(
+      `BLOCKED x402 payment of ${pre.amountUsdc} USDC to ${accept.payTo}: ${pre.violations.map((v) => v.rule).join(", ")}`
+    );
+    return res.status(403).json({
+      ok: false,
+      error: "POLICY_VIOLATION",
+      violations: pre.violations.map((v) => v.message),
+      rules: pre.violations.map((v) => v.rule),
+      policyHash: policy.hash,
+    });
+  }
+
+  try {
+    const signed = await signer.sign(accept);
+    broadcast({
+      type: "payment",
+      verdict: "PASS",
+      payee: signed.payee,
+      amountUsdc: signed.amountUsdc,
+      network: signed.network,
+      merchant: body.merchant,
+      item: body.item,
+      violations: [],
+      policyHash: policy.hash,
+      at,
+    });
+    broadcast({ type: "status", status: currentStatus(), at: new Date().toISOString() });
+    return res.json({
+      ok: true,
+      paymentHeader: signed.paymentHeader,
+      from: signed.from,
+      payee: signed.payee,
+      amountUsdc: signed.amountUsdc,
+      policyHash: policy.hash,
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "SIGN_ERROR", message: (e as Error).message });
   }
 });
 
